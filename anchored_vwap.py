@@ -86,7 +86,7 @@ def _flatten(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def fetch(ticker: str, start=None, period=None, interval: str = "1d") -> pd.DataFrame:
+def fetch(ticker: str, start=None, period=None, interval: str = "1d", end=None) -> pd.DataFrame:
     """Download OHLCV for one ticker via yfinance (split/div adjusted)."""
     import yfinance as yf
 
@@ -95,6 +95,8 @@ def fetch(ticker: str, start=None, period=None, interval: str = "1d") -> pd.Data
         kwargs["start"] = start
     elif period is not None:
         kwargs["period"] = period
+    if end is not None:
+        kwargs["end"] = end
     df = yf.download(ticker, **kwargs)
     if df is None or len(df) == 0:
         raise ValueError("no data returned (bad ticker, or no network?)")
@@ -124,11 +126,11 @@ def normalize_interval(interval: str) -> str:
     return _INTERVAL_ALIASES.get(interval.strip().lower(), interval.strip().lower())
 
 
-def fetch_interval(ticker: str, interval: str, start=None, period=None) -> pd.DataFrame:
+def fetch_interval(ticker: str, interval: str, start=None, period=None, end=None) -> pd.DataFrame:
     """Fetch OHLCV at ``interval``, resampling 60m -> 2h/4h when yfinance lacks it."""
     norm = normalize_interval(interval)
     if norm in _RESAMPLE_FROM_60M:
-        base = fetch(ticker, start=start, period=period, interval="60m")
+        base = fetch(ticker, start=start, period=period, interval="60m", end=end)
         rule = _RESAMPLE_FROM_60M[norm]
         agg = {c: _OHLCV_AGG[c] for c in _OHLCV_AGG if c in base.columns}
         try:
@@ -136,7 +138,7 @@ def fetch_interval(ticker: str, interval: str, start=None, period=None) -> pd.Da
         except ValueError:  # older pandas wants the uppercase offset alias ('4H')
             out = base.resample(rule.upper(), label="left", closed="left").agg(agg)
         return out.dropna(how="any")
-    return fetch(ticker, start=start, period=period, interval=norm)
+    return fetch(ticker, start=start, period=period, interval=norm, end=end)
 
 
 def _start_for_anchor(anchor: str, swing_window_days: int) -> dt.date:
@@ -198,13 +200,15 @@ def resolve_anchor(df: pd.DataFrame, anchor: str) -> pd.Timestamp:
 
 
 def analyze(ticker: str, anchor: str = "ytd", interval: str = "1d",
-            swing_window_days: int = 365):
+            swing_window_days: int = 365, end=None):
     """Fetch ``ticker``, resolve the anchor, and return (result_df, anchor_ts).
 
     ``result_df`` starts at the anchor bar and carries the AVWAP columns.
+    ``end`` caps the data (YYYY-MM-DD) so you can isolate a historical window
+    for out-of-sample / different-regime testing.
     """
     start = _start_for_anchor(anchor, swing_window_days)
-    df = fetch_interval(ticker, interval, start=start)
+    df = fetch_interval(ticker, interval, start=start, end=end)
     anchor_ts = resolve_anchor(df, anchor)
     if _DATE_RE.match(anchor.strip()):
         want = pd.Timestamp(anchor.strip())

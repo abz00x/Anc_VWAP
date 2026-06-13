@@ -50,6 +50,8 @@ def main(argv=None) -> int:
     p.add_argument("tickers", nargs="*", help="tickers, e.g. AAPL NVDA BTC-USD")
     p.add_argument("-w", "--watchlist", help="file with tickers (# comments ok)")
     p.add_argument("-a", "--anchor", default="20d")
+    p.add_argument("--end", help="cap data at YYYY-MM-DD (isolate a past window for "
+                                 "out-of-sample / different-regime tests)")
     p.add_argument("-i", "--interval", default="30m")
     p.add_argument("--band", default="-1", help="entry band (default: -1)")
     p.add_argument("--side", choices=["long", "short"], default="long")
@@ -82,7 +84,7 @@ def main(argv=None) -> int:
     for t in tickers:
         try:
             res, _ = analyze(t, anchor=args.anchor, interval=args.interval,
-                             swing_window_days=args.window)
+                             swing_window_days=args.window, end=args.end)
             df = first_passage(res, entry_col, args.side, tgt_col, args.leverage,
                                liq_pct, args.horizon, args.warmup, fee_frac)
             s = summarize(df)
