@@ -1,36 +1,89 @@
-# Anchored VWAP Screener
+# Anchored VWAP Screener + Band Backtester
 
-Take a ticker (or a whole watchlist), compute its **Anchored VWAP** from a chosen
-anchor point, and flag how far price has stretched from that AVWAP — measured as a
-**z-score** in volume-weighted standard-deviation units.
+Tools for working with **Anchored VWAP** (hlc3 typical price) and its
+**±1 / ±2 / ±3 standard-deviation bands** — the same indicator as the
+TradingView "Anchored VWAP (hlc3)" overlay (`AVWAP`, blue ±1σ, orange ±2σ,
+red ±3σ).
 
-It's the anchored cousin of the reference *Snapback Z-Score* indicator: instead of
-`(close − 20d SMA) / stdev`, it uses `(close − AVWAP) / volume-weighted stdev`, and
-re-uses the same ±2 / ±2.5 / ±3 snap-back zones.
+| Tool            | What it does                                                        |
+|-----------------|---------------------------------------------------------------------|
+| `levels.py`     | print AVWAP + all 6 bands for a ticker across 1h / 4h / 1d          |
+| `backtest.py`   | how price behaved the last times it touched/crossed each band       |
+| `screener.py`   | scan a watchlist, rank by z-score stretch from the AVWAP            |
+| `selftest.py`   | offline math checks (no network)                                    |
 
 ## Install
 
 ```bash
 python3 -m pip install -r requirements.txt
 ```
+(`matplotlib` is only needed for `backtest.py --chart`.)
 
-## Use
+## 1. Multi-timeframe levels — `levels.py`
 
 ```bash
-# default anchor = year-to-date
-python screener.py AAPL MSFT NVDA
-
-# scan a watchlist file, only show stretched names, save a CSV
-python screener.py -w watchlist.txt --min-abs-z 2 --csv out.csv
-
-# anchor at the 1-year swing low (classic AVWAP-from-the-bottom)
-python screener.py TSLA --anchor low --window 365
-
-# anchor at a specific date (e.g. an earnings gap)
-python screener.py SPY --anchor 2026-01-02
+python levels.py SNDK --anchor 2026-04-01            # match the chart's swing-low anchor
+python levels.py SNDK --anchor low --intervals 1h 4h 1d
 ```
 
-### Anchor options (`-a/--anchor`)
+```
+SNDK  4h   anchor 2026-04-01   (212 bars)
+  close       1994.99    z +2.15    dev +58.5%   🔴 overbought
+  +3σ         2288.42
+  +2σ         1945.26
+  +1σ         1602.09    (blue line)
+  AVWAP       1258.93
+  -1σ          915.77    (blue line)
+  -2σ          572.60
+  -3σ          229.44
+```
+
+That's the TradingView header readout, reproduced per timeframe.
+
+## 2. Band backtest — `backtest.py`
+
+Finds every bar where price **touches** (or crosses) a band, splits the events
+into **support** vs **resistance** tests, and measures the **forward return**:
+
+```bash
+python backtest.py SNDK --anchor 2026-04-01 --interval 4h --horizon 10
+python backtest.py SNDK --anchor 2026-04-01 --interval 4h --chart sndk.png --csv events.csv
+python backtest.py SNDK --anchor low --interval 1d --mode cross_down
+```
+
+```
+SNDK 4h  anchor 2026-04-01  — touch, fwd 10 bars  (212 bars)
+LEVEL  ROLE         N  MEAN_FWD   MEDIAN  BOUNCE%  AVG_MFE  AVG_MAE
+--------------------------------------------------------------------
++1σ    resistance   5     -1.4%    -0.9%      60%     +1.8%    -4.1%
+AVWAP  support      3     +2.9%    +3.1%      67%     +5.0%    -2.2%
+-1σ    support      6     +4.3%    +4.0%      83%     +6.6%    -1.9%   <- "the blue line"
+```
+
+* **support** = price came *down* to the level (level was below the prior close);
+  a bounce = positive forward return.
+* **resistance** = price came *up* to the level; a rejection = negative return.
+* **BOUNCE%** = share of events that resolved in the bounce/rejection direction.
+* **MFE / MAE** = average best / worst excursion within the horizon.
+
+`--mode`: `touch` (range straddles the level, default), `cross_up`, `cross_down`.
+`--horizon`: number of forward bars to measure (default 10).
+`--csv`: dump every individual event (time, level, role, fwd, mfe, mae).
+`--chart`: save a dark, TradingView-style PNG with the bands and touch markers.
+
+> ⚠️ Small samples: a band may only be touched a handful of times. Treat
+> BOUNCE% as a hint, not a guarantee — read N alongside it.
+
+## 3. Watchlist screener — `screener.py`
+
+```bash
+python screener.py AAPL MSFT NVDA
+python screener.py -w watchlist.txt --anchor ytd --min-abs-z 2 --csv out.csv
+```
+Ranks tickers by how stretched price is from the AVWAP (z-score in
+volume-weighted std-dev units), with the ±2/2.5/3 snap-back zones.
+
+## Anchor options (`-a/--anchor`)
 
 | Spec          | Meaning                                            |
 |---------------|----------------------------------------------------|
@@ -40,22 +93,7 @@ python screener.py SPY --anchor 2026-01-02
 | `YYYY-MM-DD`  | first bar on/after that date                       |
 | `NNd/w/m/y`   | NN days / weeks / months / years back              |
 
-`--window` (days) sets the lookback used to find the `high`/`low` swing (default 365).
-
-### Output
-
-```
-TICKER     CLOSE     AVWAP     DEV%       Z   ZONE
---------------------------------------------------------------
-NVDA      131.20    118.40    10.8%    2.71   🔴 strong overbought
-TSLA      210.50    248.90   -15.4%   -2.93   🟢 strong oversold
-AAPL      291.13    285.10     2.1%    0.74
-```
-
-* **DEV%** — percent distance of close from the AVWAP.
-* **Z** — deviation in volume-weighted std-dev units. Sort is by `|Z|` so the most
-  stretched names float to the top.
-* **ZONE** — snap-back label: `|z|≥2` over/oversold, `≥2.5` strong, `≥3` extreme.
+`--window` (days) sets the lookback used to find the `high`/`low` swing.
 
 ## How it works
 
@@ -65,11 +103,22 @@ For every bar from the anchor forward, with typical price `tp = (H+L+C)/3`:
 AVWAP   = Σ(tp · vol) / Σ(vol)
 vw_std  = sqrt( Σ(tp² · vol)/Σ(vol) − AVWAP² )      # volume-weighted std
 z       = (close − AVWAP) / vw_std
-bands   = AVWAP ± {1,2,3} · vw_std
+bands   = AVWAP ± {1, 2, 3} · vw_std
 ```
 
-Data is split/dividend-adjusted (`yfinance`, `auto_adjust=True`) so multi-month
-anchors don't jump on corporate actions.
+This matches TradingView's Anchored VWAP standard-deviation bands.
+
+### Notes on timeframes & data
+
+* **4h** is not a native yfinance interval — it's built by resampling **60m**
+  bars, so bucket boundaries (and thus 4h values) won't be penny-identical to
+  TradingView. The cumulative AVWAP is robust to this; backtest event timing is
+  a little more sensitive.
+* Intraday (`1h`/`4h`) history from yfinance is limited to ~730 days back.
+* Daily data is split/dividend-adjusted (`auto_adjust=True`) so multi-month
+  anchors don't jump on corporate actions.
+* Values are close to, but won't exactly equal, TradingView (different data
+  feed + session alignment). Tune `--anchor` to line the AVWAP up with the chart.
 
 ## Test the math (no network)
 
@@ -79,9 +128,12 @@ python selftest.py
 
 ## Files
 
-| File                | Purpose                                             |
-|---------------------|-----------------------------------------------------|
-| `anchored_vwap.py`  | core: fetch, anchor resolution, AVWAP/z-score math  |
-| `screener.py`       | CLI that scans tickers and prints the table         |
-| `selftest.py`       | offline unit checks for the math                    |
-| `watchlist.txt`     | sample watchlist                                    |
+| File                | Purpose                                                  |
+|---------------------|----------------------------------------------------------|
+| `anchored_vwap.py`  | core: fetch, interval resampling, anchor resolution, math |
+| `levels.py`         | multi-timeframe AVWAP + bands readout                    |
+| `backtest.py`       | band touch/cross forward-return backtest (+ optional chart) |
+| `plotting.py`       | optional matplotlib chart helper                         |
+| `screener.py`       | watchlist z-score screener                               |
+| `selftest.py`       | offline unit checks                                      |
+| `watchlist.txt`     | sample watchlist                                         |

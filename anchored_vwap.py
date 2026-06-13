@@ -103,6 +103,39 @@ def fetch(ticker: str, start=None, period=None, interval: str = "1d") -> pd.Data
     return df
 
 
+# Friendly interval names -> yfinance intervals.  yfinance has no native 4h
+# (or 2h) bar, so those are built by resampling 60m data.
+_INTERVAL_ALIASES = {
+    "1h": "60m", "h": "60m", "1hr": "60m", "60min": "60m", "hourly": "60m",
+    "2h": "2h", "4h": "4h", "4hr": "4h", "240m": "4h",
+    "1d": "1d", "d": "1d", "day": "1d", "daily": "1d", "1day": "1d",
+    "1w": "1wk", "w": "1wk", "1week": "1wk", "weekly": "1wk", "1wk": "1wk",
+}
+_RESAMPLE_FROM_60M = {"2h": "2h", "4h": "4h"}
+_OHLCV_AGG = {"Open": "first", "High": "max", "Low": "min",
+              "Close": "last", "Volume": "sum"}
+
+
+def normalize_interval(interval: str) -> str:
+    """Map a friendly interval name (e.g. '4h') to a yfinance/internal one."""
+    return _INTERVAL_ALIASES.get(interval.strip().lower(), interval.strip().lower())
+
+
+def fetch_interval(ticker: str, interval: str, start=None, period=None) -> pd.DataFrame:
+    """Fetch OHLCV at ``interval``, resampling 60m -> 2h/4h when yfinance lacks it."""
+    norm = normalize_interval(interval)
+    if norm in _RESAMPLE_FROM_60M:
+        base = fetch(ticker, start=start, period=period, interval="60m")
+        rule = _RESAMPLE_FROM_60M[norm]
+        agg = {c: _OHLCV_AGG[c] for c in _OHLCV_AGG if c in base.columns}
+        try:
+            out = base.resample(rule, label="left", closed="left").agg(agg)
+        except ValueError:  # older pandas wants the uppercase offset alias ('4H')
+            out = base.resample(rule.upper(), label="left", closed="left").agg(agg)
+        return out.dropna(how="any")
+    return fetch(ticker, start=start, period=period, interval=norm)
+
+
 def _start_for_anchor(anchor: str, swing_window_days: int) -> dt.date:
     """Pick a fetch start date that comfortably includes the anchor bar."""
     today = pd.Timestamp.today().normalize()
@@ -168,7 +201,7 @@ def analyze(ticker: str, anchor: str = "ytd", interval: str = "1d",
     ``result_df`` starts at the anchor bar and carries the AVWAP columns.
     """
     start = _start_for_anchor(anchor, swing_window_days)
-    df = fetch(ticker, start=start, interval=interval)
+    df = fetch_interval(ticker, interval, start=start)
     anchor_ts = resolve_anchor(df, anchor)
     sliced = df.loc[anchor_ts:]
     if len(sliced) < 2:
