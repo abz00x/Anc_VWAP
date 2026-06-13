@@ -1,0 +1,6 @@
+# Anchored VWAP screener watchlist
+# One or many tickers per line. Everything after a # is ignored.
+
+AAPL MSFT NVDA GOOGL AMZN META
+TSLA AMD AVGO NFLX
+SPY QQQ IWM
