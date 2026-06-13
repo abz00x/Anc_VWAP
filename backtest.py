@@ -79,11 +79,32 @@ def role_of(res: pd.DataFrame, i: int, col: str) -> str:
     return "support" if prior_close > level else "resistance"
 
 
-def run(res: pd.DataFrame, mode: str, horizon: int):
+def baseline_forward(res: pd.DataFrame, horizon: int, warmup: int):
+    """Unconditional forward-return stats over all bars -- the drift to beat.
+
+    In a strong trend every level looks like it 'bounces', so the only honest
+    read is each level's return *relative to* this baseline.
+    """
+    cl = res["Close"].to_numpy(float)
+    n = len(res)
+    rets = []
+    for i in range(max(warmup, 0), n - 1):
+        j = min(i + horizon, n - 1)
+        if j > i:
+            rets.append(cl[j] / cl[i] - 1.0)
+    if not rets:
+        return None
+    r = np.array(rets)
+    return dict(n=len(r), mean=float(r.mean()), median=float(np.median(r)),
+                pos=float((r > 0).mean()))
+
+
+def run(res: pd.DataFrame, mode: str, horizon: int, warmup: int = 5):
+    base = baseline_forward(res, horizon, warmup)
     rows = []
     events_by_level: dict[str, list[int]] = {}
     for name, col in LEVELS:
-        evs = detect_events(res, col, mode)
+        evs = [i for i in detect_events(res, col, mode) if i >= warmup]
         events_by_level[name] = evs
         for role in ("support", "resistance"):
             sel = [i for i in evs if role_of(res, i, col) == role]
@@ -93,17 +114,21 @@ def run(res: pd.DataFrame, mode: str, horizon: int):
             fwd = np.array([f[0] for f in fs])
             mfe = np.array([f[1] for f in fs])
             mae = np.array([f[2] for f in fs])
-            bounce = float((fwd > 0).mean() if role == "support" else (fwd < 0).mean())
+            pos = float((fwd > 0).mean())
+            excess = float(fwd.mean() - base["mean"]) if base else float("nan")
             rows.append(dict(level=name, role=role, n=len(fwd),
-                             mean_fwd=float(fwd.mean()), med_fwd=float(np.median(fwd)),
-                             bounce=bounce, mfe=float(mfe.mean()), mae=float(mae.mean())))
-    return pd.DataFrame(rows), events_by_level
+                             mean_fwd=float(fwd.mean()), excess=excess,
+                             med_fwd=float(np.median(fwd)), pos=pos,
+                             mfe=float(mfe.mean()), mae=float(mae.mean())))
+    return pd.DataFrame(rows), events_by_level, base
 
 
-def events_table(res: pd.DataFrame, mode: str, horizon: int) -> pd.DataFrame:
+def events_table(res: pd.DataFrame, mode: str, horizon: int, warmup: int = 5) -> pd.DataFrame:
     rows = []
     for name, col in LEVELS:
         for i in detect_events(res, col, mode):
+            if i < warmup:
+                continue
             f = forward(res, i, horizon)
             rows.append(dict(time=res.index[i], level=name, role=role_of(res, i, col),
                              close=float(res["Close"].iloc[i]),
@@ -128,6 +153,9 @@ def main(argv=None) -> int:
                    help="event type (default: touch)")
     p.add_argument("--horizon", type=int, default=10,
                    help="forward bars to measure (default: 10)")
+    p.add_argument("--warmup", type=int, default=5,
+                   help="skip events in the first N bars after the anchor, where the "
+                        "bands are still degenerate / stacked (default: 5)")
     p.add_argument("--window", type=int, default=365,
                    help="lookback days for high/low swing anchor (default: 365)")
     p.add_argument("--csv", help="write per-event detail to this CSV")
@@ -136,24 +164,30 @@ def main(argv=None) -> int:
 
     res, anchor_ts = analyze(args.ticker.upper(), anchor=args.anchor,
                              interval=args.interval, swing_window_days=args.window)
-    summary, events_by_level = run(res, args.mode, args.horizon)
+    summary, events_by_level, base = run(res, args.mode, args.horizon, args.warmup)
 
     title = (f"{args.ticker.upper()} {args.interval}  anchor {anchor_ts.date()}  "
-             f"— {args.mode}, fwd {args.horizon} bars  ({len(res)} bars)")
+             f"— {args.mode}, fwd {args.horizon} bars, warmup {args.warmup}  ({len(res)} bars)")
     print("\n" + title)
+    if base:
+        print(f"baseline (all bars): mean {base['mean'] * 100:+.1f}%   "
+              f"median {base['median'] * 100:+.1f}%   positive {base['pos'] * 100:.0f}%   "
+              f"n={base['n']}")
+        print("EXCESS = level's mean forward return minus this baseline (the real edge)")
     if summary.empty:
         print("  no events detected")
     else:
-        print(f"{'LEVEL':<7}{'ROLE':<12}{'N':>3}{'MEAN_FWD':>10}{'MEDIAN':>9}"
-              f"{'BOUNCE%':>9}{'AVG_MFE':>9}{'AVG_MAE':>9}")
-        print("-" * 68)
+        print(f"\n{'LEVEL':<7}{'ROLE':<12}{'N':>3}{'MEAN_FWD':>10}{'EXCESS':>9}"
+              f"{'MEDIAN':>9}{'POS%':>7}{'AVG_MFE':>9}{'AVG_MAE':>9}")
+        print("-" * 75)
         for _, r in summary.iterrows():
             print(f"{r['level']:<7}{r['role']:<12}{int(r['n']):>3}"
-                  f"{r['mean_fwd'] * 100:>9.1f}%{r['med_fwd'] * 100:>8.1f}%"
-                  f"{r['bounce'] * 100:>8.0f}%{r['mfe'] * 100:>8.1f}%{r['mae'] * 100:>8.1f}%")
+                  f"{r['mean_fwd'] * 100:>9.1f}%{r['excess'] * 100:>8.1f}%"
+                  f"{r['med_fwd'] * 100:>8.1f}%{r['pos'] * 100:>6.0f}%"
+                  f"{r['mfe'] * 100:>8.1f}%{r['mae'] * 100:>8.1f}%")
 
     if args.csv:
-        ev = events_table(res, args.mode, args.horizon)
+        ev = events_table(res, args.mode, args.horizon, args.warmup)
         ev.to_csv(args.csv, index=False)
         print(f"\nwrote {len(ev)} events -> {args.csv}")
 

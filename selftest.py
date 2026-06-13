@@ -80,11 +80,12 @@ def test_detect_events_and_forward():
 
 def test_backtest_run_smoke():
     res = anchored_vwap(_frame())
-    summary, events = bt.run(res, "touch", horizon=2)
+    summary, events, base = bt.run(res, "touch", horizon=2, warmup=1)
     assert isinstance(summary, pd.DataFrame)
     assert set(events) == {name for name, _ in bt.LEVELS}
+    assert base is None or {"n", "mean", "median", "pos"} <= set(base)
     if not summary.empty:
-        assert {"level", "role", "n", "mean_fwd", "bounce"} <= set(summary.columns)
+        assert {"level", "role", "n", "mean_fwd", "excess", "pos"} <= set(summary.columns)
 
 
 def main():
