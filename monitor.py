@@ -23,6 +23,11 @@ BANDS = [("+3σ", "upper3"), ("+2σ", "upper2"), ("+1σ", "upper1"),
          ("AVWAP", "avwap"),
          ("-1σ", "lower1"), ("-2σ", "lower2"), ("-3σ", "lower3")]
 
+# +2σ/+3σ are the exhaustion caps (fade/trim); AVWAP and below are the
+# value/dip side where longs set up.  +1σ is treated as a buy band (pullback).
+CAP_BANDS = {"+3σ", "+2σ"}
+BUY_BANDS = {"+1σ", "AVWAP", "-1σ", "-2σ", "-3σ"}
+
 
 def nearest_band(last):
     """(band name, signed % distance) for the closest band; + = price above it."""
@@ -42,12 +47,15 @@ def tag(last, near_pct: float) -> str:
     """Transparent state label from z-zone + nearest-band proximity."""
     z = float(last["z"])
     name, dist = nearest_band(last)
+    near = abs(dist) <= near_pct
     if z >= 2.5:
         return f"🔴 EXTENDED (z {z:+.1f}) — trim / no new longs"
     if z <= -2.5:
         return f"🔥 deep oversold (z {z:+.1f}) — snapback watch"
-    if abs(dist) <= near_pct:
-        return f"👀 at {name} ({dist:+.1f}%) — watch for trigger"
+    if near and name in CAP_BANDS:
+        return f"🔴 at {name} cap ({dist:+.1f}%) — fade/trim, don't chase"
+    if near and name in BUY_BANDS:
+        return f"👀 at {name} ({dist:+.1f}%) — potential long, watch trigger"
     if z >= 2.0:
         return f"🟠 stretched (z {z:+.1f}) — hold, don't chase"
     if z <= -2.0:
