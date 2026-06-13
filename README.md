@@ -114,7 +114,11 @@ This matches TradingView's Anchored VWAP standard-deviation bands.
   bars, so bucket boundaries (and thus 4h values) won't be penny-identical to
   TradingView. The cumulative AVWAP is robust to this; backtest event timing is
   a little more sensitive.
-* Intraday (`1h`/`4h`) history from yfinance is limited to ~730 days back.
+* Intraday history from yfinance is limited: ~730 days for `1h`/`4h`, but only
+  ~60 days for sub-hour (`5m`/`15m`/`30m`) and ~8 days for `1m`. A months-old
+  anchor therefore only works on `1h`/`4h`/`1d`; on lower timeframes use a recent
+  anchor (e.g. `--anchor 5d`, or `--anchor low --window 10`). The tool warns if a
+  date anchor predates the data it could actually fetch.
 * Daily data is split/dividend-adjusted (`auto_adjust=True`) so multi-month
   anchors don't jump on corporate actions.
 * Values are close to, but won't exactly equal, TradingView (different data

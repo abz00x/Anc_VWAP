@@ -10,9 +10,12 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+import sys
 
 import numpy as np
 import pandas as pd
+
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 # NNd / NNw / NNm / NNy  ->  lookback anchor
 _LOOKBACK_RE = re.compile(r"^(\d+)\s*([dwmy])$", re.IGNORECASE)
@@ -203,6 +206,14 @@ def analyze(ticker: str, anchor: str = "ytd", interval: str = "1d",
     start = _start_for_anchor(anchor, swing_window_days)
     df = fetch_interval(ticker, interval, start=start)
     anchor_ts = resolve_anchor(df, anchor)
+    if _DATE_RE.match(anchor.strip()):
+        want = pd.Timestamp(anchor.strip())
+        first = df.index[0]
+        first_naive = first.tz_localize(None) if getattr(first, "tzinfo", None) else first
+        if want.date() < first_naive.date():
+            print(f"  ! note: requested anchor {anchor} predates available {interval} "
+                  f"data (starts {first_naive.date()}); anchored there instead. "
+                  f"yfinance serves ~60d of sub-hour bars, ~8d of 1m.", file=sys.stderr)
     sliced = df.loc[anchor_ts:]
     if len(sliced) < 2:
         raise ValueError(f"only {len(sliced)} bar(s) from anchor -- pick an earlier anchor")
