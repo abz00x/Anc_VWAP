@@ -37,12 +37,19 @@ BAND_ALIASES = {"avwap": "avwap", "+1": "upper1", "+2": "upper2", "+3": "upper3"
 
 
 def simulate(res, band_col, mode, stop_pct, target_r, time_stop,
-             warmup=5, slippage_bps=0.0):
+             warmup=5, slippage_bps=0.0, exit_mode="target",
+             trail_pct=5.0, exit_band="avwap"):
+    """Long-only event-driven sim. exit_mode:
+       target  fixed R-multiple target + hard stop + time stop
+       trail   trailing % stop (ratchets up from the run-up high) + hard floor
+       band    exit when close loses ``exit_band`` (ride the line) + hard stop
+    """
     o = res["Open"].to_numpy(float)
     h = res["High"].to_numpy(float)
     lo = res["Low"].to_numpy(float)
     c = res["Close"].to_numpy(float)
     lvl = res[band_col].to_numpy(float)
+    xb = res[exit_band].to_numpy(float) if exit_band in res.columns else None
     idx = res.index
     n = len(res)
     slip = slippage_bps / 1e4
@@ -67,21 +74,32 @@ def simulate(res, band_col, mode, stop_pct, target_r, time_stop,
         if e >= n:
             break
         entry = o[e] * (1 + slip)
-        stop = entry * (1 - stop_pct / 100.0)
-        risk = entry - stop
+        hard_stop = entry * (1 - stop_pct / 100.0)
+        risk = entry - hard_stop
         target = entry + target_r * risk
+        run_peak = entry                            # highest high since entry
 
         exit_price = exit_i = reason = None
         jmax = min(e + time_stop, n - 1)
         for j in range(e, jmax + 1):
-            if o[j] <= stop:                        # gap through stop
-                exit_price, exit_i, reason = o[j] * (1 - slip), j, "stop"; break
-            if o[j] >= target:                      # gap through target
+            eff_stop = hard_stop
+            if exit_mode == "trail":
+                eff_stop = max(hard_stop, run_peak * (1 - trail_pct / 100.0))
+            stop_reason = "trail" if eff_stop > hard_stop else "stop"
+
+            if o[j] <= eff_stop:                     # gap through stop
+                exit_price, exit_i, reason = o[j] * (1 - slip), j, stop_reason; break
+            if exit_mode == "target" and o[j] >= target:
                 exit_price, exit_i, reason = o[j] * (1 - slip), j, "target"; break
-            if lo[j] <= stop:                       # intrabar stop (checked first)
-                exit_price, exit_i, reason = stop * (1 - slip), j, "stop"; break
-            if h[j] >= target:                      # intrabar target
+            if lo[j] <= eff_stop:                    # intrabar stop (checked first)
+                exit_price, exit_i, reason = eff_stop * (1 - slip), j, stop_reason; break
+            if exit_mode == "target" and h[j] >= target:
                 exit_price, exit_i, reason = target * (1 - slip), j, "target"; break
+            if exit_mode == "band" and xb is not None and not np.isnan(xb[j]) \
+                    and c[j] < xb[j]:               # lost the line
+                exit_price, exit_i, reason = c[j] * (1 - slip), j, "band"; break
+            run_peak = max(run_peak, h[j])
+
         if exit_price is None:                      # time stop at close
             exit_price, exit_i, reason = c[jmax] * (1 - slip), jmax, "time"
 
@@ -187,6 +205,12 @@ def main(argv=None) -> int:
                    help="target as a multiple of risk (default: 2.0)")
     p.add_argument("--time-stop", type=int, default=20,
                    help="exit at market after N bars (default: 20)")
+    p.add_argument("--exit", dest="exit_mode", choices=["target", "trail", "band"],
+                   default="target", help="exit style (default: target)")
+    p.add_argument("--trail-pct", type=float, default=5.0,
+                   help="trailing stop %% for --exit trail (default: 5.0)")
+    p.add_argument("--exit-band", default="avwap",
+                   help="band to lose for --exit band (default: avwap)")
     p.add_argument("--risk-pct", type=float, default=1.0,
                    help="account %% risked per trade for the equity curve (default: 1.0)")
     p.add_argument("--warmup", type=int, default=5, help="skip first N bars (default: 5)")
@@ -204,16 +228,25 @@ def main(argv=None) -> int:
     if args.entry_mode:
         mode = args.entry_mode
 
+    exit_band = BAND_ALIASES.get(args.exit_band.lower().replace("σ", ""), args.exit_band)
     res, anchor_ts = analyze(args.ticker.upper(), anchor=args.anchor,
                              interval=args.interval, swing_window_days=args.window)
     trades = simulate(res, band, mode, args.stop_pct, args.target_r,
-                      args.time_stop, args.warmup, args.slippage_bps)
+                      args.time_stop, args.warmup, args.slippage_bps,
+                      exit_mode=args.exit_mode, trail_pct=args.trail_pct,
+                      exit_band=exit_band)
     m = metrics(trades, res, args.risk_pct)
 
+    if args.exit_mode == "target":
+        exit_desc = f"target {args.target_r}R"
+    elif args.exit_mode == "trail":
+        exit_desc = f"trail {args.trail_pct}%"
+    else:
+        exit_desc = f"exit<{exit_band}"
     print(f"\n{args.ticker.upper()} {args.interval}  anchor {anchor_ts.date()}  "
           f"({len(res)} bars)")
-    print(f"signal: {mode} of {band}   |   stop {args.stop_pct}%  target "
-          f"{args.target_r}R  time-stop {args.time_stop}  risk {args.risk_pct}%/trade")
+    print(f"signal: {mode} of {band}   |   stop {args.stop_pct}%  {exit_desc}  "
+          f"time-stop {args.time_stop}  risk {args.risk_pct}%/trade")
     print("-" * 60)
     if m["n"] == 0:
         print(f"no trades.   buy & hold over window: {m['buy_hold'] * 100:+.1f}%")

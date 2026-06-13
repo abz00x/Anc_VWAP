@@ -118,6 +118,17 @@ def test_strategy_simulate_and_metrics():
         assert -1.0 <= m["max_dd"] <= 0.0
 
 
+def test_strategy_exit_modes():
+    res = _trend_frame(seed=5)
+    for xm in ("target", "trail", "band"):
+        tr = st.simulate(res, "avwap", "reclaim", 3.0, 2.0, 12, warmup=5,
+                         exit_mode=xm, trail_pct=5.0, exit_band="avwap")
+        assert isinstance(tr, pd.DataFrame)
+        if not tr.empty:
+            assert (tr["exit_time"] >= tr["entry_time"]).all()
+            assert st.metrics(tr, res, 1.0)["n"] == len(tr)
+
+
 def test_monitor_tag():
     res = anchored_vwap(_frame())
     last = res.iloc[-1]

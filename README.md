@@ -10,6 +10,7 @@ red ±3σ).
 | `levels.py`     | print AVWAP + all 6 bands for a ticker across 1h / 4h / 1d          |
 | `backtest.py`   | how price behaved the last times it touched/crossed each band       |
 | `strategy.py`   | event-driven backtest of the actual entry/stop/target rules + equity |
+| `sweep.py`      | grid-sweep stop/target/exit combos; rank by expectancy vs buy & hold |
 | `monitor.py`    | live "is it actionable now" readout: z + nearest band + state tag   |
 | `screener.py`   | scan a watchlist, rank by z-score stretch from the AVWAP            |
 | `selftest.py`   | offline math checks (no network)                                    |
@@ -136,6 +137,20 @@ Signals: `reclaim` (close crosses up through AVWAP), `dip` (touch −1σ from ab
 to build your own. **Read the last line** — if it doesn't *BEAT buy & hold*, the
 timing isn't adding value over just holding.
 
+Exits (`--exit`): `target` (fixed R, default), `trail` (`--trail-pct`, lets
+winners run), `band` (`--exit-band`, ride until the line is lost). In a strong
+trend `trail`/`band` usually beat a fixed target.
+
+### Find what works — `sweep.py`
+
+Runs the whole grid (signals × stops × exits) in one shot and ranks by
+expectancy, flagging combos whose return beats buy & hold:
+
+```bash
+python3 sweep.py SNDK --anchor 20d --interval 30m
+python3 sweep.py SNDK --anchor 2026-04-01 --interval 4h --time-stop 30
+```
+
 ## 5. Watchlist screener — `screener.py`
 
 ```bash
@@ -200,6 +215,7 @@ python selftest.py
 | `levels.py`         | multi-timeframe AVWAP + bands readout                    |
 | `backtest.py`       | band touch/cross forward-return backtest (+ optional chart) |
 | `strategy.py`       | event-driven entry/stop/target backtest + equity curve   |
+| `sweep.py`          | parameter grid sweep, ranked vs buy & hold               |
 | `monitor.py`        | live band proximity / state readout                      |
 | `plotting.py`       | optional matplotlib chart helper                         |
 | `screener.py`       | watchlist z-score screener                               |
