@@ -9,6 +9,7 @@ red ±3σ).
 |-----------------|---------------------------------------------------------------------|
 | `levels.py`     | print AVWAP + all 6 bands for a ticker across 1h / 4h / 1d          |
 | `backtest.py`   | how price behaved the last times it touched/crossed each band       |
+| `strategy.py`   | event-driven backtest of the actual entry/stop/target rules + equity |
 | `monitor.py`    | live "is it actionable now" readout: z + nearest band + state tag   |
 | `screener.py`   | scan a watchlist, rank by z-score stretch from the AVWAP            |
 | `selftest.py`   | offline math checks (no network)                                    |
@@ -99,7 +100,43 @@ while true; do clear; python3 monitor.py SNDK --anchor low --window 10 \
     --intervals 30m 15m; sleep 300; done
 ```
 
-## 4. Watchlist screener — `screener.py`
+## 4. Strategy backtest — `strategy.py`
+
+`backtest.py` measures what happens *after* a band touch; `strategy.py` trades
+it: entry signal → fill the **next bar's open** → exit on stop / target (R
+multiple) / time-stop, then reports win rate, expectancy and an equity curve —
+benchmarked against **buy & hold** over the same window (the bar to beat).
+
+```bash
+python3 strategy.py SNDK --anchor 2026-04-01 --interval 4h --signal pullback
+python3 strategy.py SNDK --anchor 20d --interval 30m --signal reclaim --chart eq.png
+python3 strategy.py SNDK --anchor 20d --interval 30m --signal dip --csv trades.csv
+```
+
+```
+SNDK 30m  anchor 2026-05-26  (182 bars)
+signal: reclaim of avwap   |   stop 3.0%  target 2.0R  time-stop 20  risk 1.0%/trade
+------------------------------------------------------------
+trades         14
+win rate       57%
+avg win        +4.8%      avg loss -2.9%
+expectancy     +0.42R / trade   (total +5.9R)
+profit factor  1.90
+avg hold       9 bars       exposure 61% of bars
+------------------------------------------------------------
+strategy       +38.2%   (compounding 1.0% risk/trade)
+buy & hold     +21.4%
+max drawdown   -7.5%
+--> strategy BEATS buy & hold
+```
+
+Signals: `reclaim` (close crosses up through AVWAP), `dip` (touch −1σ from above),
+`pullback` (touch +1σ from above). Tunables: `--stop-pct`, `--target-r`,
+`--time-stop`, `--risk-pct`, `--slippage-bps`, plus `--entry-band`/`--entry-mode`
+to build your own. **Read the last line** — if it doesn't *BEAT buy & hold*, the
+timing isn't adding value over just holding.
+
+## 5. Watchlist screener — `screener.py`
 
 ```bash
 python screener.py AAPL MSFT NVDA
@@ -162,6 +199,8 @@ python selftest.py
 | `anchored_vwap.py`  | core: fetch, interval resampling, anchor resolution, math |
 | `levels.py`         | multi-timeframe AVWAP + bands readout                    |
 | `backtest.py`       | band touch/cross forward-return backtest (+ optional chart) |
+| `strategy.py`       | event-driven entry/stop/target backtest + equity curve   |
+| `monitor.py`        | live band proximity / state readout                      |
 | `plotting.py`       | optional matplotlib chart helper                         |
 | `screener.py`       | watchlist z-score screener                               |
 | `selftest.py`       | offline unit checks                                      |

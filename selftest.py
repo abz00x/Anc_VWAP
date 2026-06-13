@@ -10,6 +10,7 @@ import pandas as pd
 
 import backtest as bt
 import monitor as mon
+import strategy as st
 from anchored_vwap import (anchored_vwap, normalize_interval, resolve_anchor,
                            typical_price, zone_label)
 
@@ -87,6 +88,34 @@ def test_backtest_run_smoke():
     assert base is None or {"n", "mean", "median", "pos"} <= set(base)
     if not summary.empty:
         assert {"level", "role", "n", "mean_fwd", "excess", "pos"} <= set(summary.columns)
+
+
+def _trend_frame(n=120, seed=3):
+    rng = np.random.default_rng(seed)
+    idx = pd.date_range("2026-04-01", periods=n, freq="h", tz="America/New_York")
+    ret = rng.normal(0.002, 0.02, n)
+    close = 700 * np.cumprod(1 + ret)
+    high = close * (1 + abs(rng.normal(0, 0.01, n)))
+    low = close * (1 - abs(rng.normal(0, 0.01, n)))
+    vol = rng.integers(1000, 5000, n).astype(float)
+    df = pd.DataFrame({"Open": close, "High": high, "Low": low,
+                       "Close": close, "Volume": vol}, index=idx)
+    return anchored_vwap(df)
+
+
+def test_strategy_simulate_and_metrics():
+    res = _trend_frame()
+    trades = st.simulate(res, "avwap", "reclaim", stop_pct=3.0, target_r=2.0,
+                         time_stop=10, warmup=5)
+    assert isinstance(trades, pd.DataFrame)
+    if not trades.empty:
+        assert {"entry", "exit", "ret", "r", "reason"} <= set(trades.columns)
+        # exits must come at or after entries; no overlap
+        assert (trades["exit_time"] >= trades["entry_time"]).all()
+    m = st.metrics(trades, res, risk_pct=1.0)
+    assert "buy_hold" in m
+    if m["n"]:
+        assert -1.0 <= m["max_dd"] <= 0.0
 
 
 def test_monitor_tag():
