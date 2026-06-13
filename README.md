@@ -9,6 +9,7 @@ red ±3σ).
 |-----------------|---------------------------------------------------------------------|
 | `levels.py`     | print AVWAP + all 6 bands for a ticker across 1h / 4h / 1d          |
 | `backtest.py`   | how price behaved the last times it touched/crossed each band       |
+| `monitor.py`    | live "is it actionable now" readout: z + nearest band + state tag   |
 | `screener.py`   | scan a watchlist, rank by z-score stretch from the AVWAP            |
 | `selftest.py`   | offline math checks (no network)                                    |
 
@@ -74,7 +75,31 @@ AVWAP  support      3     +2.9%    +3.1%      67%     +5.0%    -2.2%
 > ⚠️ Small samples: a band may only be touched a handful of times. Treat
 > BOUNCE% as a hint, not a guarantee — read N alongside it.
 
-## 3. Watchlist screener — `screener.py`
+## 3. Live monitor — `monitor.py`
+
+A compact "where are we right now" readout per timeframe — current price, AVWAP,
+z-score, the nearest band + % distance, and a plain-English state tag
+(extended / stretched / at a band / oversold / neutral).
+
+```bash
+python3 monitor.py SNDK --anchor 2026-04-01 --intervals 1d 4h 1h
+python3 monitor.py SNDK --anchor low --window 10 --intervals 30m 15m --near 1.0
+```
+
+```
+SNDK   anchor low
+  30m  px   1979.04  AVWAP   1743.81  z +1.83   🟠 stretched (z +1.8) — hold, don't chase
+  15m  px   1979.04  AVWAP   1745.03  z +1.83   🟠 stretched (z +1.8) — hold, don't chase
+```
+
+Use it as a poor-man's alert by looping it:
+
+```bash
+while true; do clear; python3 monitor.py SNDK --anchor low --window 10 \
+    --intervals 30m 15m; sleep 300; done
+```
+
+## 4. Watchlist screener — `screener.py`
 
 ```bash
 python screener.py AAPL MSFT NVDA

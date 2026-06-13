@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 import backtest as bt
+import monitor as mon
 from anchored_vwap import (anchored_vwap, normalize_interval, resolve_anchor,
                            typical_price, zone_label)
 
@@ -86,6 +87,15 @@ def test_backtest_run_smoke():
     assert base is None or {"n", "mean", "median", "pos"} <= set(base)
     if not summary.empty:
         assert {"level", "role", "n", "mean_fwd", "excess", "pos"} <= set(summary.columns)
+
+
+def test_monitor_tag():
+    res = anchored_vwap(_frame())
+    last = res.iloc[-1]
+    name, dist = mon.nearest_band(last)
+    assert name in {n for n, _ in mon.BANDS}
+    assert isinstance(dist, float)
+    assert isinstance(mon.tag(last, 1.5), str)
 
 
 def main():
