@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 import backtest as bt
+import exits as ex
 import leverage as lv
 import monitor as mon
 import strategy as st
@@ -143,6 +144,19 @@ def test_leverage_first_passage():
     s = lv.summarize(df)
     if s:
         assert 0.0 <= s["win"] <= 1.0 and 0.0 <= s["liq"] <= 1.0
+
+
+def test_exits_eval_target():
+    res = _trend_frame(seed=9)
+    entries = [i + 1 for i in lv._touches(res, "lower1", 5) if i + 1 < len(res)]
+    s = ex.eval_target(res, entries, "long", "band", "avwap",
+                       stop_pct=3.0, lev=10.0, horizon=20, fee_frac=0.0004)
+    assert s is None or {"hit", "stop", "timeout", "avg_r", "ev", "n"} <= set(s)
+    if s:
+        assert abs(s["hit"] + s["stop"] + s["timeout"] - 1.0) < 1e-9
+    # candidate_targets returns band + pct entries
+    cands = ex.candidate_targets("long")
+    assert any(k == "band" for _, k, _ in cands) and any(k == "pct" for _, k, _ in cands)
 
 
 def test_monitor_tag():

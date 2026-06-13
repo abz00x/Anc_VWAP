@@ -12,6 +12,7 @@ red ±3σ).
 | `strategy.py`   | event-driven backtest of the actual entry/stop/target rules + equity |
 | `sweep.py`      | grid-sweep stop/target/exit combos; rank by expectancy vs buy & hold |
 | `leverage.py`   | leverage/liquidation first-passage at bands (perps): WIN/LIQ%/EV    |
+| `exits.py`      | back-solve the highest-EV / highest-probability exit for an entry   |
 | `monitor.py`    | live "is it actionable now" readout: z + nearest band + state tag   |
 | `screener.py`   | scan a watchlist, rank by z-score stretch from the AVWAP            |
 | `selftest.py`   | offline math checks (no network)                                    |
@@ -235,6 +236,7 @@ python selftest.py
 | `strategy.py`       | event-driven entry/stop/target backtest + equity curve   |
 | `sweep.py`          | parameter grid sweep, ranked vs buy & hold               |
 | `leverage.py`       | leverage/liquidation first-passage at bands (perps)      |
+| `exits.py`          | exit optimizer: best target by hit-rate / EV             |
 | `monitor.py`        | live band proximity / state readout                      |
 | `plotting.py`       | optional matplotlib chart helper                         |
 | `screener.py`       | watchlist z-score screener                               |
