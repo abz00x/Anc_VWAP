@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 import backtest as bt
+import leverage as lv
 import monitor as mon
 import strategy as st
 from anchored_vwap import (anchored_vwap, normalize_interval, resolve_anchor,
@@ -127,6 +128,21 @@ def test_strategy_exit_modes():
         if not tr.empty:
             assert (tr["exit_time"] >= tr["entry_time"]).all()
             assert st.metrics(tr, res, 1.0)["n"] == len(tr)
+
+
+def test_leverage_first_passage():
+    res = _trend_frame(seed=9)
+    df = lv.first_passage(res, "lower1", "long", "avwap", lev=10.0,
+                          liq_pct=0.095, horizon=20, warmup=5, fee_frac=0.0004)
+    assert isinstance(df, pd.DataFrame)
+    if not df.empty:
+        assert set(df["kind"].unique()) <= {"win", "liq", "timeout"}
+        # liquidation always costs exactly one margin unit
+        liqs = df[df["kind"] == "liq"]
+        assert (liqs["acct"] == -1.0).all()
+    s = lv.summarize(df)
+    if s:
+        assert 0.0 <= s["win"] <= 1.0 and 0.0 <= s["liq"] <= 1.0
 
 
 def test_monitor_tag():

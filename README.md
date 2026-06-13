@@ -11,6 +11,7 @@ red ±3σ).
 | `backtest.py`   | how price behaved the last times it touched/crossed each band       |
 | `strategy.py`   | event-driven backtest of the actual entry/stop/target rules + equity |
 | `sweep.py`      | grid-sweep stop/target/exit combos; rank by expectancy vs buy & hold |
+| `leverage.py`   | leverage/liquidation first-passage at bands (perps): WIN/LIQ%/EV    |
 | `monitor.py`    | live "is it actionable now" readout: z + nearest band + state tag   |
 | `screener.py`   | scan a watchlist, rank by z-score stretch from the AVWAP            |
 | `selftest.py`   | offline math checks (no network)                                    |
@@ -151,6 +152,23 @@ python3 sweep.py SNDK --anchor 20d --interval 30m
 python3 sweep.py SNDK --anchor 2026-04-01 --interval 4h --time-stop 30
 ```
 
+### Leverage / liquidation — `leverage.py`
+
+For leveraged perps (Hyperliquid etc.): a *first-passage* test at each band —
+does price revert to the mean (AVWAP) **before** a wick liquidates you? Long at
+the lower bands (bounce up), short at the upper bands (fade down).
+
+```bash
+python3 leverage.py SNDK --anchor 20d --interval 30m --leverage 10
+python3 leverage.py SNDK --anchor 2026-04-01 --interval 4h --leverage 10 --horizon 30
+```
+
+Reports per band: `WIN%` (reverted to target first), **`LIQ%`** (liquidated first
+— the number that matters), `TIME%` (neither), and **`EV/margin`** per trade (a
+win pays ~leverage × move; a liq is −100%). At 10x, liquidation is ~−9.5% away,
+so one liq erases ~10 wins — watch `LIQ%`, not `WIN%`. Models a maintenance
+buffer + taker fees; funding is not modelled. Small N = low confidence.
+
 ## 5. Watchlist screener — `screener.py`
 
 ```bash
@@ -216,6 +234,7 @@ python selftest.py
 | `backtest.py`       | band touch/cross forward-return backtest (+ optional chart) |
 | `strategy.py`       | event-driven entry/stop/target backtest + equity curve   |
 | `sweep.py`          | parameter grid sweep, ranked vs buy & hold               |
+| `leverage.py`       | leverage/liquidation first-passage at bands (perps)      |
 | `monitor.py`        | live band proximity / state readout                      |
 | `plotting.py`       | optional matplotlib chart helper                         |
 | `screener.py`       | watchlist z-score screener                               |
