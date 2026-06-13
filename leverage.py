@@ -32,6 +32,8 @@ LONG_BANDS = [("-1σ", "lower1"), ("-2σ", "lower2"), ("-3σ", "lower3")]
 SHORT_BANDS = [("+1σ", "upper1"), ("+2σ", "upper2"), ("+3σ", "upper3")]
 TARGET_ALIASES = {"avwap": "avwap", "+1": "upper1", "-1": "lower1",
                   "+2": "upper2", "-2": "lower2", "+3": "upper3", "-3": "lower3"}
+ENTRY_COLS = {"-1": "lower1", "-2": "lower2", "-3": "lower3",
+              "+1": "upper1", "+2": "upper2", "+3": "upper3"}
 
 
 def _touches(res, col, warmup):
@@ -100,6 +102,31 @@ def summarize(df):
     )
 
 
+def consolidated(ticker, anchor, intervals, band, side, target_col, lev,
+                 liq_pct, horizon, warmup, fee_frac, window):
+    """One row per timeframe for a single (band, side) -- cross-TF robustness."""
+    col = ENTRY_COLS.get(band.lower().replace("σ", ""), band)
+    print(f"\n{ticker}  —  {side} {band} -> {target_col}   {lev:g}x "
+          f"(liq {liq_pct * 100:.1f}%)   anchor {anchor}   horizon {horizon}")
+    print(f"{'TF':<6}{'N':>4}{'WIN%':>6}{'LIQ%':>6}{'TIME%':>7}{'EV/margin':>11}{'MEDIAN':>9}")
+    print("-" * 49)
+    for iv in intervals:
+        try:
+            res, _ = analyze(ticker, anchor=anchor, interval=iv, swing_window_days=window)
+            s = summarize(first_passage(res, col, side, target_col, lev,
+                                        liq_pct, horizon, warmup, fee_frac))
+            if not s:
+                print(f"{iv:<6}   no touches")
+                continue
+            flag = "  <-- +EV" if s["ev"] > 0 else ""
+            print(f"{iv:<6}{s['n']:>4}{s['win'] * 100:>5.0f}%{s['liq'] * 100:>5.0f}%"
+                  f"{s['timeout'] * 100:>6.0f}%{s['ev'] * 100:>+10.1f}%"
+                  f"{s['median_acct'] * 100:>+8.1f}%{flag}")
+        except Exception as e:
+            print(f"{iv:<6}   {e}")
+    print("\nNote: timeframes of the same window overlap -> NOT independent samples.")
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(
         description="Leverage/liquidation first-passage analysis at AVWAP bands",
@@ -107,6 +134,12 @@ def main(argv=None) -> int:
     p.add_argument("ticker")
     p.add_argument("-a", "--anchor", default="ytd")
     p.add_argument("-i", "--interval", default="1d")
+    p.add_argument("-I", "--intervals", nargs="+",
+                   help="compare these timeframes for one band/side (see --band/--side)")
+    p.add_argument("--band", default="-1",
+                   help="entry band for --intervals compare (default: -1)")
+    p.add_argument("--side", choices=["long", "short"], default="long",
+                   help="side for --intervals compare (default: long)")
     p.add_argument("--leverage", type=float, default=10.0)
     p.add_argument("--maint-pct", type=float, default=0.5,
                    help="maintenance buffer %% subtracted from liq distance (default: 0.5)")
@@ -125,6 +158,12 @@ def main(argv=None) -> int:
         p.error("leverage too high for the maintenance buffer (liq distance <= 0)")
     fee_frac = args.fee_bps / 1e4
     tgt_col = TARGET_ALIASES.get(args.target_band.lower().replace("σ", ""), args.target_band)
+
+    if args.intervals:
+        consolidated(args.ticker.upper(), args.anchor, args.intervals, args.band,
+                     args.side, tgt_col, args.leverage, liq_pct, args.horizon,
+                     args.warmup, fee_frac, args.window)
+        return 0
 
     res, ats = analyze(args.ticker.upper(), anchor=args.anchor,
                        interval=args.interval, swing_window_days=args.window)
