@@ -1,0 +1,12 @@
+# Validation basket — decoded from your watchlist screenshot.
+# These are the ones I'm confident about (Yahoo equity tickers):
+INTC MU SNDK AMD NVDA ORCL CRCL
+
+# --- CONFIRM / FIX THESE (your symbols were cut off in the screenshot) ---
+# XYZ     # "XYZ10..."  -> Block Inc (XYZ)?  or something else?
+# SPY     # "S&P50..."  -> S&P 500; SPY (ETF) or ^GSPC as a proxy
+# DRAM    # "DRAM..."   -> no standard equity ticker; Hyperliquid-only? tell me the underlying
+#
+# Uncomment the ones that are right (and correct any), then re-run.
+# Note: these look like Hyperliquid perps; yfinance gives the underlying EQUITY,
+# which is a fair proxy for validation but won't match perp price/funding exactly.

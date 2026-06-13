@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 import backtest as bt
+import basket as bask
 import exits as ex
 import leverage as lv
 import monitor as mon
@@ -157,6 +158,12 @@ def test_exits_eval_target():
     # candidate_targets returns band + pct entries
     cands = ex.candidate_targets("long")
     assert any(k == "band" for _, k, _ in cands) and any(k == "pct" for _, k, _ in cands)
+
+
+def test_basket_load_tickers():
+    import types
+    ns = types.SimpleNamespace(tickers=["aapl", "MSFT", "aapl"], watchlist=None)
+    assert bask.load_tickers(ns) == ["AAPL", "MSFT"]
 
 
 def test_monitor_tag():
