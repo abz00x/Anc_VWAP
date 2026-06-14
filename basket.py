@@ -60,6 +60,9 @@ def main(argv=None) -> int:
     p.add_argument("--maint-pct", type=float, default=0.5)
     p.add_argument("--horizon", type=int, default=20)
     p.add_argument("--warmup", type=int, default=5)
+    p.add_argument("--trend-filter", type=int, default=0,
+                   help="only enter when the AVWAP slope agrees with the side over "
+                        "this many bars (regime gate; 0 = off)")
     p.add_argument("--fee-bps", type=float, default=4.0)
     p.add_argument("--window", type=int, default=365)
     args = p.parse_args(argv)
@@ -86,7 +89,8 @@ def main(argv=None) -> int:
             res, _ = analyze(t, anchor=args.anchor, interval=args.interval,
                              swing_window_days=args.window, end=args.end)
             df = first_passage(res, entry_col, args.side, tgt_col, args.leverage,
-                               liq_pct, args.horizon, args.warmup, fee_frac)
+                               liq_pct, args.horizon, args.warmup, fee_frac,
+                               trend_lookback=args.trend_filter)
             s = summarize(df)
             if not s:
                 print(f"{t:<10}   no touches")

@@ -145,6 +145,10 @@ def test_leverage_first_passage():
     s = lv.summarize(df)
     if s:
         assert 0.0 <= s["win"] <= 1.0 and 0.0 <= s["liq"] <= 1.0
+    # regime gate runs and never produces more trades than unfiltered
+    df_f = lv.first_passage(res, "lower1", "long", "avwap", lev=10.0, liq_pct=0.095,
+                            horizon=20, warmup=5, fee_frac=0.0004, trend_lookback=10)
+    assert len(df_f) <= len(df)
 
 
 def test_exits_eval_target():

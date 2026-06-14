@@ -53,15 +53,22 @@ def _touches(res, col, warmup):
 
 
 def first_passage(res, entry_col, side, target_col, lev, liq_pct, horizon,
-                  warmup, fee_frac):
+                  warmup, fee_frac, trend_lookback=0):
     o = res["Open"].to_numpy(float)
     h = res["High"].to_numpy(float)
     lo = res["Low"].to_numpy(float)
     c = res["Close"].to_numpy(float)
     tgt = res[target_col].to_numpy(float)
+    av = res["avwap"].to_numpy(float)
     n = len(res)
     rows = []
     for i in _touches(res, entry_col, warmup):
+        if trend_lookback > 0:                    # regime gate: AVWAP slope must agree
+            k = i - trend_lookback
+            if k < 0:
+                continue
+            if (side == "long") != (av[i] > av[k]):
+                continue
         e = i + 1
         if e >= n:
             break
